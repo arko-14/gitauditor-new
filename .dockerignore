@@ -1,0 +1,28 @@
+# __pycache__ and bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# environment variables
+.env
+.env.local
+
+# Virtual environments
+venv/
+env/
+.env/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS generated
+.DS_Store
+
+# Git
+.git/
+.gitignore
+
+# Langgraph / Langchain
+.langchain/
