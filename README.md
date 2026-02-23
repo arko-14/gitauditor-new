@@ -1,50 +1,20 @@
-# Git Auditor
+# CodeCortex
+**Autonomous AI Code Review Agent**
 
-**Autonomous Multi-Agent Code Reviewer**
+CodeCortex is a backend CI/CD service that autonomously reviews GitHub Pull Requests. It uses a LangGraph state machine and the Groq Llama 3 model to detect logic bugs, security vulnerabilities, and code quality issues, automatically posting verdicts (`APPROVE` or `REQUEST_CHANGES`) directly to the PR.
 
-**Gitauditor** is an intelligent CI/CD agent that autonomously reviews GitHub Pull Requests. It uses a **LangGraph** architecture and the **Groq Llama 3** model to "think" like a human engineering team, detecting logic bugs, security flaws, and style issues before they merge.
-
-## 🚀 Features
-
-* **🤖 AI Agent Orchestration (LangGraph)**
-    * **Senior Reviewer Node:** Deep dives into code diffs to find SQL injections, hardcoded secrets, and logic flaws.
-    * **Release Manager Node:** Aggregates findings and formats them into a crisp, actionable Markdown review (`APPROVE` vs `REQUEST_CHANGES`).
-* **⚡ Auto-Fix Suggestions:** Provides ready-to-copy code fixes directly in the GitHub comments.
-* **🚀 Blazing Fast Inference:** Powered by **Groq (`llama-3.3-70b-versatile`)** for incredibly fast inference latency.
-* **� Docker Ready:** Instantly spin up the API using Docker Compose.
-
----
-
-## 🏗️ System Architecture
-
-```mermaid
-graph TD
-    A[GitHub Webhook / POST /review] --> B(FastAPI Gateway)
-    B --> C{LangGraph StateMachine}
-    C -->|Analyze Diff| D[🕵️‍♂️ Senior Reviewer Node]
-    C -->|Format Verdict| E[⚖️ Release Node]
-    D <-->|LLM Inference| F[Groq API (Llama 3)]
-    E <-->|LLM Inference| F
-    E -->|JSON Result| B
-    B -->|Post Comment| G[GitHub API]
-```
-
----
-
-## 🛠️ Tech Stack
-
-* **Backend Framework:** FastAPI (Python)
-* **Agentic Framework:** LangGraph
-* **LLM Engine:** Groq (Llama 3 70B)
-* **Git Integration:** PyGithub
-* **Containerization:** Docker & Docker Compose
+## 🛠 Tech Stack
+- **Backend framework:** FastAPI (Python)
+- **Agentic architecture:** LangGraph
+- **LLM engine:** Groq (`llama-3.3-70b-versatile`)
+- **Git integration:** PyGithub (GitHub App Auth)
+- **Deployment:** Docker & Docker Compose
 
 ---
 
 ## ⚡ Installation & Setup
 
-### 🐳 The Easy Way (Docker - Recommended)
-
+### 1. The Easy Way (Docker - Recommended)
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/arko-14/gitauditor-new.git
@@ -57,12 +27,12 @@ graph TD
    # Groq API
    GROQ_API_KEY=your_groq_key_here
    
-   # GitHub Authentication (Choose ONE method)
-   # Method 1: GitHub App (Recommended for production, higher rate limits)
+   # GitHub Authentication (Choose ONE)
+   # Method 1: GitHub App (Provides higher rate limits)
    GITHUB_APP_ID=your_app_id_here
    GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
    
-   # Method 2: Personal Access Token (Fallback/Testing, requires 'repo' scope)
+   # Method 2: Personal Access Token (Fallback method)
    GITHUB_TOKEN=your_github_token_here
    
    # Optional: LangSmith Tracing
@@ -77,8 +47,7 @@ graph TD
    docker-compose up --build
    ```
 
-### 🐍 The Standard Way (Local Python)
-
+### 2. The Standard Way (Local Python)
 ```bash
 python -m venv venv
 source venv/bin/activate  # or venv\Scripts\activate on Windows
@@ -88,29 +57,22 @@ uvicorn app.main:app --reload
 
 ---
 
-## 🎮 Usage
+## 🔗 Connecting to GitHub Webhooks
+
+To have CodeCortex automatically review Pull Requests:
+1. Deploy this application (e.g., using Render, Railway, or Fly.io).
+2. Create a **GitHub App** via GitHub Developer Settings.
+3. Set the App's **Webhook URL** to `https://your-deployed-app.com/review`.
+4. Grant the App **Read & Write** permissions for **Pull Requests** and **Issues**, and **Read-only** for **Contents**.
+5. Subscribe the App to **Pull request** events.
+6. Install the GitHub App on your target repositories.
 
 ### Direct API Testing
-You can easily test the running agent using the provided test script:
+You can manually test the local server without triggering a GitHub webhook by using the provided script:
 ```bash
 pip install requests
 python test_api.py
 ```
-
-Or via cURL:
-```bash
-curl -X POST http://localhost:8000/review \
-     -H "Content-Type: application/json" \
-     -d '{"github_url": "https://github.com/arko-14/gitauditor/pull/3"}'
-```
-
-### 🔗 Connecting to GitHub Webhooks
-To have Gitauditor review Pull Requests instantly when they are opened on any repository:
-1. Deploy your FastAPI application to a host like Render, Railway, or Fly.io.
-2. Go to the Repository Settings of the repo you want to audit -> **Webhooks**.
-3. Add a webhook pointing to `https://your-deployed-app.com/review`.
-4. Ensure the Content type is `application/json`.
-5. Ensure the GitHub account holding the `GITHUB_TOKEN` is added as a collaborator to the target repository.
 
 ---
 
