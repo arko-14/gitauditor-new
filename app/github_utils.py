@@ -23,13 +23,13 @@ def get_github_client(repo_name: str) -> Github:
         
         # 2. Get the specific installation for this repository
         try:
-            # Note: app_gi.get_repo(repo_name) will not work because the App doesn't have 
-            # repo access until it gets an installation token.
-            # We must find the installation first. Pygithub provides get_repo_installation.
             parts = repo_name.split('/')
             if len(parts) == 2:
-                owner, repo = parts[0], parts[1]
-                installation = app_gi.get_repo_installation(owner, repo)
+                owner, repo_str = parts[0], parts[1]
+                
+                # PyGithub requires grabbing the app, then finding the installation for the repo
+                app = app_gi.get_app()
+                installation = app.get_repo_installation(owner, repo_str)
                 
                 # 3. Create an installation-specific token
                 inst_auth = Auth.AppInstallationAuth(app_auth, installation.id)
@@ -37,6 +37,7 @@ def get_github_client(repo_name: str) -> Github:
             else:
                 raise ValueError("Invalid repo_name format. Expected owner/repo")
         except Exception as e:
+            import traceback
             print(f"Failed to authenticate via GitHub App for {repo_name}: {e}")
             # Fallback will happen below
     
