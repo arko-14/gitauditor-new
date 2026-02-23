@@ -1,6 +1,7 @@
 print("MAIN.PY STARTED")
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
+from typing import Dict, Any
 from app.github_utils import get_pr_details, post_formal_review
 from app.agents_langgraph import run_agent_crew  # Use LangGraph+Groq implementation
 import traceback  # Add this for error logging
@@ -10,25 +11,40 @@ app = FastAPI(
     description="Automated PR Review Agent using Groq Llama3 & LangGraph with LangSmith tracing"
 )
 
-class PRRequest(BaseModel):
-    github_url: str
-    # Example: "https://github.com/your-username/your-repo/pull/1"
-
 @app.get("/")
 def home():
     return {"message": "Gitauditor Agent is Running 🚀"}
 
 @app.post("/review")
-def review_pr(request: PRRequest):
+async def review_pr(request: Request):
     try:
-        # 1. Parse the URL
-        try:
-            # Extracts 'owner/repo' and 'pr_number' from URL
-            parts = request.github_url.split("github.com/")[-1].split("/")
-            repo_name = f"{parts[0]}/{parts[1]}"
-            pr_number = int(parts[3])
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid GitHub Pull Request URL.")
+        # 1. Parse the Payload
+        payload = await request.json()
+        
+        repo_name = None
+        pr_number = None
+
+        # Handle direct test scripts (Old method)
+        if "github_url" in payload:
+            try:
+                parts = payload["github_url"].split("github.com/")[-1].split("/")
+                repo_name = f"{parts[0]}/{parts[1]}"
+                pr_number = int(parts[3])
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid GitHub Pull Request URL.")
+        
+        # Handle ACTUAL GitHub Webhooks
+        elif "pull_request" in payload and "repository" in payload:
+            # We only want to review when PRs are opened or synchronized (updated)
+            action = payload.get("action")
+            if action not in ["opened", "synchronize", "reopened"]:
+                return {"status": "Ignored", "message": f"Action '{action}' is not reviewable."}
+            
+            repo_name = payload["repository"]["full_name"]
+            pr_number = payload["pull_request"]["number"]
+            
+        else:
+            raise HTTPException(status_code=400, detail="Invalid payload format. Expected 'github_url' or GitHub PR Webhook.")
 
         print(f"🔍 Analyzing PR: {repo_name} #{pr_number}")
 
