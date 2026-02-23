@@ -3,6 +3,6 @@ uvicorn
 crewai 
 langchain-groq
 langsmith
-pygithub 
+PyGithub[jwt]
 python-dotenv
 langgraph

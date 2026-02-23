@@ -20,14 +20,27 @@ groq_llm = ChatGroq(
 
 # Prompts
 reviewer_prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are a strict code reviewer. You hate logical errors, security risks (like SQL injection), and messy code. You focus on the unified diff provided. Always analyze the code changes in the diff below."),
+    ("system", """You are a senior, strict code reviewer. Your sole purpose is to identify logical errors, security vulnerabilities (e.g., SQL injection, XSS), and critical bugs.
+You must IGNORE trivial style nitpicks, missing comments, or personal preference formatting.
+Analyze the provided unified diff.
+Output your review in Markdown. If you find critical issues, explain them clearly and explicitly state why they are a problem. 
+If the code is purely stylistic or safe, state that there are no critical issues.
+Always analyze the code changes in the diff below."""),
     ("human", "Here is the unified diff to review:\n\n{diff_text}")
 ])
 
 manager_prompt = ChatPromptTemplate.from_messages([
-    ("system", "You read the technical review and make the final call. If there are bugs/security issues, you REQUEST_CHANGES. If it is just style nitpicks or clean code, you APPROVE."),
+    ("system", """You are a Release Manager. You read the technical review provided by the Senior Reviewer and make the final call on the Pull Request.
+If the Senior Reviewer found actual bugs, security risks, or critical logical errors, you must reject the PR.
+If the Senior Reviewer only found trivial issues or stated there are no critical issues, you must approve the PR.
+
+Your output MUST end with exactly one of the following two lines (on its own line, with no extra characters):
+VERDICT: APPROVE
+VERDICT: REQUEST_CHANGES
+
+Do not use any other verdict strings."""),
     # Use the actual review output from the reviewer node
-    ("human", "{review_output}")
+    ("human", "Senior Reviewer's analysis:\n\n{review_output}\n\nBased on this analysis, what is your final verdict? Remember to end your response strictly with VERDICT: APPROVE or VERDICT: REQUEST_CHANGES.")
 ])
 
 # LangGraph state schema using Pydantic BaseModel
@@ -83,6 +96,12 @@ def run_agent_crew(diff_text):
     state = ReviewState(diff_text=diff_text)
     result = langgraph_workflow.invoke(state)
     # Defensive: If the review_output is missing, return a clear error
-    if not result.get("final_output") or "{review_output}" in result.get("final_output", ""):
+    final_out = result.get("final_output", "")
+    if not final_out or "{review_output}" in final_out:
         return "ERROR: The technical review output was not passed correctly. Please check the workflow logic."
-    return result["final_output"]
+    
+    # Enforce formatting fallback if the LLM forgot the prefix
+    if "VERDICT: APPROVE" not in final_out and "VERDICT: REQUEST_CHANGES" not in final_out:
+        print("WARNING: Manager Node did not output a strict VERDICT. Defaulting to COMMENT.")
+        
+    return final_out

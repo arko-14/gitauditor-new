@@ -57,7 +57,12 @@ graph TD
    # Groq API
    GROQ_API_KEY=your_groq_key_here
    
-   # GitHub Token (Requires 'repo' scope)
+   # GitHub Authentication (Choose ONE method)
+   # Method 1: GitHub App (Recommended for production, higher rate limits)
+   GITHUB_APP_ID=your_app_id_here
+   GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+   
+   # Method 2: Personal Access Token (Fallback/Testing, requires 'repo' scope)
    GITHUB_TOKEN=your_github_token_here
    
    # Optional: LangSmith Tracing
