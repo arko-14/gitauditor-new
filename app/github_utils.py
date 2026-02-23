@@ -1,7 +1,6 @@
 import os
-from github import Github
 from dotenv import load_dotenv
-from github import Github, Auth
+from github import Github, Auth, GithubIntegration
 
 load_dotenv()
 
@@ -19,7 +18,6 @@ def get_github_client(repo_name: str) -> Github:
         # Ensure private key is properly formatted if passed as single line in env
         private_key = private_key.replace('\\n', '\n')
         app_auth = Auth.AppAuth(app_id, private_key)
-        app_gi = Github(auth=app_auth)
         
         # 2. Get the specific installation for this repository
         try:
@@ -27,9 +25,9 @@ def get_github_client(repo_name: str) -> Github:
             if len(parts) == 2:
                 owner, repo_str = parts[0], parts[1]
                 
-                # PyGithub requires grabbing the app, then finding the installation for the repo
-                app = app_gi.get_app()
-                installation = app.get_repo_installation(owner, repo_str)
+                # PyGithub requires GithubIntegration to find the installation for the repo
+                gi = GithubIntegration(auth=app_auth)
+                installation = gi.get_repo_installation(owner, repo_str)
                 
                 # 3. Create an installation-specific token
                 inst_auth = Auth.AppInstallationAuth(app_auth, installation.id)
