@@ -2,4 +2,4 @@
 import os
 
 def insecure():
-    os.system(input("Enter a command: "))  # Command injection vulnerability
+    os.system(input("Enter a commandkkoijnkmkm,,.lmo009: "))  # Command injection vulnerability
