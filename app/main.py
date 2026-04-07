@@ -3,8 +3,11 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from typing import Dict, Any
 from app.github_utils import get_pr_details, post_formal_review
-from app.agents_langgraph import run_agent_crew  # Use LangGraph+Groq implementation
-import traceback  # Add this for error logging
+from app.agents_langgraph import run_agent_crew
+from app.metrics import metrics_collector
+import traceback
+import time
+import re
 
 app = FastAPI(
     title="Gitauditor Code Reviewer",
@@ -13,7 +16,14 @@ app = FastAPI(
 
 @app.get("/")
 def home():
-    return {"message": "Gitauditor Agent is Running 🚀"}
+    return {
+        "message": "Gitauditor Agent is Running 🚀",
+        "analytics": "/analytics"
+    }
+
+@app.get("/analytics")
+def get_analytics():
+    return metrics_collector.get_stats()
 
 @app.post("/review")
 async def review_pr(request: Request):
@@ -59,6 +69,7 @@ async def review_pr(request: Request):
 
         # 3. Run AI Crew (now LangGraph)
         print("🤖 AI Crew (LangGraph) starting...")
+        start_time = time.time()
         try:
             review_result = run_agent_crew(diff_text)
         except Exception as e:
@@ -66,6 +77,8 @@ async def review_pr(request: Request):
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"AI Crew error: {e}")
         
+        duration = time.time() - start_time
+
         # 4. Parse Verdict (Simple Logic)
         action = "COMMENT"
         if "VERDICT: APPROVE" in review_result:
@@ -73,7 +86,17 @@ async def review_pr(request: Request):
         elif "VERDICT: REQUEST_CHANGES" in review_result:
             action = "REQUEST_CHANGES"
 
-        # 5. Post Result to GitHub
+        # 5. Extract Severities for Metrics
+        severities = {
+            "High": len(re.findall(r"Severity: High", review_result, re.IGNORECASE)),
+            "Medium": len(re.findall(r"Severity: Medium", review_result, re.IGNORECASE)),
+            "Low": len(re.findall(r"Severity: Low", review_result, re.IGNORECASE)),
+        }
+        
+        # 6. Update Metrics
+        metrics_collector.update_metrics(duration, action, severities)
+
+        # 7. Post Result to GitHub
         try:
             post_formal_review(pr_obj, review_result, action)
         except Exception as e:
@@ -84,6 +107,7 @@ async def review_pr(request: Request):
         return {
             "status": "Success", 
             "verdict": action, 
+            "duration_sec": round(duration, 2),
             "review": review_result
         }
     except HTTPException as he:

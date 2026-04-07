@@ -17,6 +17,15 @@ try:
         print("✅ Success!")
         print("Response Details:")
         print(response.json())
+        
+        # New: Test Analytics Endpoint
+        print(f"\n📊 Checking Analytics at {URL.replace('/review', '/analytics')}...")
+        analytics_resp = requests.get(URL.replace("/review", "/analytics"))
+        if analytics_resp.status_code == 200:
+            print("Analytics Data:")
+            print(analytics_resp.json())
+        else:
+            print(f"❌ Could not fetch analytics. Status: {analytics_resp.status_code}")
     else:
         print(f"❌ Error! Status Code: {response.status_code}")
         print("Details:", response.text)
