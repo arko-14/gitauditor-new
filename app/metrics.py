@@ -94,10 +94,6 @@ class PRMetrics:
                 "total_prs_reviewed": total_prs,
                 "average_latency_seconds": round(avg_latency, 2),
                 "total_tokens_consumed": self.data["total_tokens"],
-                "roi_metrics": {
-                    "estimated_eng_time_saved_hours": round(time_saved_hrs, 1),
-                    "assumed_minutes_per_manual_review": 15
-                },
                 "verdict_distribution": self.data["verdicts"],
                 "security_metrics": {
                     "severity_counts": self.data["severities"],
