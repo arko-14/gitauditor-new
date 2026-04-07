@@ -71,7 +71,9 @@ async def review_pr(request: Request):
         print("🤖 AI Crew (LangGraph) starting...")
         start_time = time.time()
         try:
-            review_result = run_agent_crew(diff_text)
+            crew_result = run_agent_crew(diff_text)
+            review_result = crew_result["review"]
+            tokens = crew_result["tokens"]
         except Exception as e:
             print('Error in run_agent_crew:', e)
             traceback.print_exc()
@@ -86,15 +88,22 @@ async def review_pr(request: Request):
         elif "VERDICT: REQUEST_CHANGES" in review_result:
             action = "REQUEST_CHANGES"
 
-        # 5. Extract Severities for Metrics
+        # 5. Extract Severities and Vulnerability Types for Metrics
         severities = {
             "High": len(re.findall(r"Severity: High", review_result, re.IGNORECASE)),
             "Medium": len(re.findall(r"Severity: Medium", review_result, re.IGNORECASE)),
             "Low": len(re.findall(r"Severity: Low", review_result, re.IGNORECASE)),
         }
+
+        vulns = {
+            "SQL Injection": len(re.findall(r"SQL Injection", review_result, re.IGNORECASE)),
+            "XSS": len(re.findall(r"XSS|Cross-Site Scripting", review_result, re.IGNORECASE)),
+            "Broken Auth": len(re.findall(r"Authentication|Authorization", review_result, re.IGNORECASE)),
+            "Logic Bug": len(re.findall(r"Logic Bug|Logical Error", review_result, re.IGNORECASE)),
+        }
         
         # 6. Update Metrics
-        metrics_collector.update_metrics(duration, action, severities)
+        metrics_collector.update_metrics(duration, action, severities, tokens, vulns)
 
         # 7. Post Result to GitHub
         try:

@@ -53,6 +53,7 @@ class ReviewState(BaseModel):
     diff_text: str
     review_output: str = ""
     final_output: str = ""
+    total_tokens: int = 0
 
 # LangGraph nodes
 def reviewer_node(state: ReviewState):
@@ -63,12 +64,18 @@ def reviewer_node(state: ReviewState):
     print("REVIEWER NODE: messages sent to LLM:", messages)
     response = groq_llm.invoke(messages)
     print("REVIEWER NODE: LLM response:", response.content)
+    
+    # Extract token usage
+    usage = response.response_metadata.get("token_usage", {})
+    tokens = usage.get("total_tokens", 0)
+    
     # Return full state with updated review_output (as dict)
     if isinstance(state, dict):
         new_state = dict(state)
     else:
         new_state = state.dict()
     new_state["review_output"] = response.content
+    new_state["total_tokens"] = new_state.get("total_tokens", 0) + tokens
     return new_state
 
 def manager_node(state: ReviewState):
@@ -84,7 +91,13 @@ def manager_node(state: ReviewState):
     print("MANAGER NODE: messages sent to LLM:", messages)
     response = groq_llm.invoke(messages)
     print("MANAGER NODE: LLM response:", response.content)
+    
+    # Extract token usage
+    usage = response.response_metadata.get("token_usage", {})
+    tokens = usage.get("total_tokens", 0)
+
     new_state["final_output"] = response.content
+    new_state["total_tokens"] = new_state.get("total_tokens", 0) + tokens
     return new_state
 
 # Build the graph
@@ -102,11 +115,19 @@ def run_agent_crew(diff_text):
     result = langgraph_workflow.invoke(state)
     # Defensive: If the review_output is missing, return a clear error
     final_out = result.get("final_output", "")
+    total_tokens = result.get("total_tokens", 0)
+
     if not final_out or "{review_output}" in final_out:
-        return "ERROR: The technical review output was not passed correctly. Please check the workflow logic."
+        return {
+            "review": "ERROR: The technical review output was not passed correctly. Please check the workflow logic.",
+            "tokens": total_tokens
+        }
     
     # Enforce formatting fallback if the LLM forgot the prefix
     if "VERDICT: APPROVE" not in final_out and "VERDICT: REQUEST_CHANGES" not in final_out:
         print("WARNING: Manager Node did not output a strict VERDICT. Defaulting to COMMENT.")
         
-    return final_out
+    return {
+        "review": final_out,
+        "tokens": total_tokens
+    }
