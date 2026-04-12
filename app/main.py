@@ -8,16 +8,19 @@ from app.metrics import metrics_collector
 import traceback
 import time
 import re
+import hmac
+import os
+import sqlite3
 
 app = FastAPI(
-    title="Gitauditor Code Reviewer",
+    title="Code-Cortex AI Code Reviewer",
     description="Automated PR Review Agent using Groq Llama3 & LangGraph with LangSmith tracing"
 )
 
 @app.get("/")
 def home():
     return {
-        "message": "Gitauditor Agent is Running 🚀",
+        "message": "Code-Cortex AI Agent is Running 🚀",
         "analytics": "/analytics"
     }
 
@@ -29,6 +32,29 @@ def get_analytics():
 async def review_pr(request: Request):
     try:
         # 1. Parse the Payload
+        payload_bytes = await request.body()
+        
+        # 1a. Webhook Signature Verification
+        github_signature = request.headers.get("X-Hub-Signature-256")
+        webhook_secret = os.getenv("GITHUB_WEBHOOK_SECRET")
+        if github_signature and webhook_secret:
+            mac = hmac.new(webhook_secret.encode(), msg=payload_bytes, digestmod="sha256")
+            expected_sig = "sha256=" + mac.hexdigest()
+            if not hmac.compare_digest(expected_sig, github_signature):
+                raise HTTPException(status_code=401, detail="Invalid webhook signature")
+                
+        # 1b. Idempotency Key Handling
+        delivery_id = request.headers.get("X-GitHub-Delivery")
+        db_path = os.getenv("SQLITE_DB_PATH", "events.db")
+        if delivery_id:
+            with sqlite3.connect(db_path) as conn:
+                conn.execute("CREATE TABLE IF NOT EXISTS processed_events (delivery_id TEXT PRIMARY KEY)")
+                cur = conn.cursor()
+                cur.execute("SELECT 1 FROM processed_events WHERE delivery_id = ?", (delivery_id,))
+                if cur.fetchone():
+                    print(f"Skipping duplicate event: {delivery_id}")
+                    return {"status": "Ignored", "message": f"Duplicate delivery ID {delivery_id} skipped."}
+
         payload = await request.json()
         
         repo_name = None
@@ -81,43 +107,63 @@ async def review_pr(request: Request):
         
         duration = time.time() - start_time
 
-        # 4. Parse Verdict (Simple Logic)
-        action = "COMMENT"
-        if "VERDICT: APPROVE" in review_result:
-            action = "APPROVE"
-        elif "VERDICT: REQUEST_CHANGES" in review_result:
-            action = "REQUEST_CHANGES"
+        import json
+        try:
+            review_obj = json.loads(review_result)
+        except Exception:
+            review_obj = {"verdict": "COMMENT", "summary": review_result, "severity": "none", "issues": []}
+
+        # 4. Parse Verdict (Structured JSON)
+        action = review_obj.get("verdict", "COMMENT")
 
         # 5. Extract Severities and Vulnerability Types for Metrics
-        severities = {
-            "High": len(re.findall(r"Severity: High", review_result, re.IGNORECASE)),
-            "Medium": len(re.findall(r"Severity: Medium", review_result, re.IGNORECASE)),
-            "Low": len(re.findall(r"Severity: Low", review_result, re.IGNORECASE)),
-        }
+        severities = {"High": 0, "Medium": 0, "Low": 0}
+        vulns = {"SQL Injection": 0, "XSS": 0, "Broken Auth": 0, "Logic Bug": 0}
+        
+        for issue in review_obj.get("issues", []):
+            itype = issue.get("type", "").lower()
+            if "sql" in itype: vulns["SQL Injection"] += 1
+            elif "xss" in itype or "cross" in itype: vulns["XSS"] += 1
+            elif "auth" in itype: vulns["Broken Auth"] += 1
+            else: vulns["Logic Bug"] += 1
+            
+        ov_sev = review_obj.get("severity", "none").lower()
+        if ov_sev == "high": severities["High"] = max(1, len(review_obj.get("issues", [])))
+        elif ov_sev == "medium": severities["Medium"] = max(1, len(review_obj.get("issues", [])))
+        elif ov_sev == "low": severities["Low"] = max(1, len(review_obj.get("issues", [])))
 
-        vulns = {
-            "SQL Injection": len(re.findall(r"SQL Injection", review_result, re.IGNORECASE)),
-            "XSS": len(re.findall(r"XSS|Cross-Site Scripting", review_result, re.IGNORECASE)),
-            "Broken Auth": len(re.findall(r"Authentication|Authorization", review_result, re.IGNORECASE)),
-            "Logic Bug": len(re.findall(r"Logic Bug|Logical Error", review_result, re.IGNORECASE)),
-        }
+        # Format Markdown for GitHub Comment
+        md_lines = [f"**Summary:** {review_obj.get('summary', 'No summary provided.')}\n"]
+        if review_obj.get("issues"):
+            md_lines.append("### Identified Issues:")
+            for idx, issue in enumerate(review_obj["issues"], 1):
+                md_lines.append(f"{idx}. **{issue.get('file', 'Unknown')}** ({issue.get('type', 'bug')}):")
+                md_lines.append(f"   > {issue.get('reason', '')}")
+                if issue.get("fix") and issue.get("fix").strip():
+                    md_lines.append(f"   *Suggestion:* \n```\n{issue.get('fix')}\n```")
+        formatted_review = "\n".join(md_lines)
         
         # 6. Update Metrics
         metrics_collector.update_metrics(duration, action, severities, tokens, vulns)
 
+        # Record Idempotency
+        if delivery_id:
+            with sqlite3.connect(db_path) as conn:
+                conn.execute("INSERT OR IGNORE INTO processed_events (delivery_id) VALUES (?)", (delivery_id,))
+
         # 7. Post Result to GitHub
         try:
-            post_formal_review(pr_obj, review_result, action)
+            post_formal_review(pr_obj, formatted_review, action)
         except Exception as e:
             print('Error posting review:', e)
             traceback.print_exc()
-            return {"status": "Partial Success", "verdict": action, "review": review_result, "error": f"Failed to post review: {e}"}
+            return {"status": "Partial Success", "verdict": action, "review": review_obj, "error": f"Failed to post review: {e}"}
 
         return {
             "status": "Success", 
             "verdict": action, 
             "duration_sec": round(duration, 2),
-            "review": review_result
+            "review": review_obj
         }
     except HTTPException as he:
         raise he

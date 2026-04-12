@@ -54,8 +54,24 @@ def get_pr_details(repo_name, pr_number):
         repo = g.get_repo(repo_name)
         pr = repo.get_pull(pr_number)
         print(f'Fetched PR: {pr}')  # Debug print
-        files = list(pr.get_files()[:5])
-        print(f'PR files: {[f.filename for f in files]}')  # Debug print
+        
+        all_files = list(pr.get_files())
+        
+        def calculate_risk_score(file):
+            score = 0
+            filename = file.filename.lower()
+            if "auth" in filename: score += 10
+            if "config" in filename or "settings" in filename: score += 5
+            if "db" in filename or "database" in filename or "sql" in filename: score += 8
+            if "dockerfile" in filename or "docker-compose" in filename: score += 5
+            if filename.endswith(".py") or filename.endswith(".js") or filename.endswith(".ts") or filename.endswith(".go"): score += 2
+            return score
+            
+        # Sort files by highest risk first
+        all_files.sort(key=calculate_risk_score, reverse=True)
+        files = all_files[:10]  # Take top 10
+        
+        print(f'PR files sorted by risk: {[f.filename for f in files]}')  # Debug print
         diff_text = ""
         for file in files:
             if file.status != "removed":
