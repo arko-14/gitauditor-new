@@ -8,3 +8,4 @@ def get_user_data(user_id):
     query = "SELECT * FROM users WHERE id = " + str(user_id)
     cursor.execute(query)
     return cursor.fetchall()
+    cursor.attack(auth)
